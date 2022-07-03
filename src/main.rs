@@ -1,8 +1,8 @@
-use std::time::Duration;
-
+use std::{time::Duration, sync::{Arc, atomic::{AtomicU64, Ordering}}};
 use clap::Parser;
 use futures::future::join_all;
 use tokio;
+use colored::*;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -20,6 +20,11 @@ struct Args {
     speed: usize,
 }
 
+struct Results {
+    success_count: AtomicU64,
+    error_count: AtomicU64
+}
+
 // Delay between queries, we take delay between two query in a same second (1/x) then we converts
 // to ms
 fn delay_between_queries(query_per_second: usize, request_count: usize) -> Duration {
@@ -29,23 +34,33 @@ fn delay_between_queries(query_per_second: usize, request_count: usize) -> Durat
 }
 
 // Delay in the async request to prevent pausing the main thread/tokio runtime in the main function
-async fn send_query(url: &String, delay_before_query: Duration) {
+async fn send_query(url: &String, delay_before_query: Duration, results: Arc<Results>) {
     tokio::time::sleep(delay_before_query).await;
-    println!("sending");
     match reqwest::get(url).await {
-        Err(_) => panic!("Host unreachable."),
-        _ => ()
-    }
+        Err(_) => results.error_count.fetch_add(1, Ordering::SeqCst),
+        Ok(_) => results.success_count.fetch_add(1, Ordering::SeqCst)
+    };
+}
+
+fn print_results(results: Arc<Results>) {
+    println!("Results:");
+    println!("Success: {}", results.success_count.load(Ordering::SeqCst).to_string().green());
+    println!("Errors: {}", results.error_count.load(Ordering::SeqCst).to_string().red());
 }
 
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
     let mut requests = Vec::new();
+    let results = Arc::new(Results {
+        success_count: AtomicU64::new(0),
+        error_count: AtomicU64::new(0),
+    });
 
-    // Preparing vector of Futures
-    for i in 1..args.count {
-        requests.push(send_query(&args.url, delay_between_queries(args.speed, i)));
+    for i in 0..args.count {
+        requests.push(send_query(&args.url, delay_between_queries(args.speed, i), results.clone()));
     }
     join_all(requests).await;
+
+    print_results(results);
 }
