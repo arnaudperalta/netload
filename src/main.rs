@@ -22,7 +22,8 @@ struct Args {
 
 struct Results {
     success_count: AtomicU64,
-    error_count: AtomicU64
+    error_count: AtomicU64,
+    latencies: Vec<u64>
 }
 
 // Delay between queries, we take delay between two query in a same second (1/x) then we converts
@@ -48,6 +49,14 @@ fn print_results(results: Arc<Results>) {
     println!("Errors: {}", results.error_count.load(Ordering::SeqCst).to_string().red());
 }
 
+fn print_execution_time(request_count: usize, requests_per_second: usize) {
+    println!(
+        "The execution will takes approximatly {} seconds.",
+        (request_count / requests_per_second).to_string().blue()
+    );
+    println!("The duration can vary with your CPU if you gave an high speed argument.");
+}
+
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
@@ -55,7 +64,10 @@ async fn main() {
     let results = Arc::new(Results {
         success_count: AtomicU64::new(0),
         error_count: AtomicU64::new(0),
+        latencies: Vec::new()
     });
+
+    print_execution_time(args.count, args.speed);
 
     for i in 0..args.count {
         requests.push(send_query(&args.url, delay_between_queries(args.speed, i), results.clone()));
