@@ -1,8 +1,7 @@
-use std::{thread, time::Duration};
+use std::time::Duration;
 
 use clap::Parser;
-use reqwest::Client;
-use futures::{stream, StreamExt};
+use futures::future::join_all;
 use tokio;
 
 #[derive(Parser, Debug)]
@@ -23,38 +22,30 @@ struct Args {
 
 // Delay between queries, we take delay between two query in a same second (1/x) then we converts
 // to ms
-fn delay_between_queries(query_per_second: f64) -> Duration {
-    return Duration::from_millis((1f64 / query_per_second * 1000f64) as u64)
+fn delay_between_queries(query_per_second: usize, request_count: usize) -> Duration {
+    return Duration::from_millis(
+        ((1f64 / query_per_second as f64 * 1000f64) as u64) * request_count as u64
+    )
 }
 
-async fn query_target(args: &Args) {
-    let client = Client::new();
-    let urls = vec![args.url.clone(); args.count];
-    let delay = delay_between_queries(args.speed as f64);
-
-    // Prepare queries for parallelize calls
-    let requests = stream::iter(urls)
-        .map(|url| {
-            let client = &client;
-            async move {
-                client.get(url).send().await
-            }
-        })
-    .buffer_unordered(args.count);
-
-    // Sending queries
-    requests.for_each(|responses| async {
-        match responses {
-            Err(e) => eprintln!("Got an error: {}", e),
-            _ => ()
-        }
-        thread::sleep(delay);
-    }).await;
+// Delay in the async request to prevent pausing the main thread/tokio runtime in the main function
+async fn send_query(url: &String, delay_before_query: Duration) {
+    tokio::time::sleep(delay_before_query).await;
+    println!("sending");
+    match reqwest::get(url).await {
+        Err(_) => panic!("Host unreachable."),
+        _ => ()
+    }
 }
 
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
+    let mut requests = Vec::new();
 
-    query_target(&args).await;
+    // Preparing vector of Futures
+    for i in 1..args.count {
+        requests.push(send_query(&args.url, delay_between_queries(args.speed, i)));
+    }
+    join_all(requests).await;
 }
