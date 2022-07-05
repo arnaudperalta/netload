@@ -19,6 +19,10 @@ struct Args {
     /// Number of query per second
     #[clap(short, long, value_parser, default_value_t = 100)]
     speed: usize,
+
+    /// HTTP Method
+    #[clap(short, long, value_parser, default_value = "get")]
+    method: String,
 }
 
 // Delay between queries, we take delay between two query in a same second (1/x) then we converts
@@ -30,10 +34,26 @@ fn delay_between_queries(query_per_second: usize, request_count: usize) -> Durat
 }
 
 // Delay in the async request to prevent pausing the main thread/tokio runtime in the main function
-async fn send_query(url: &String, delay_before_query: Duration, results: Arc<outputs::Results>) {
+async fn send_query(
+    url: &String,
+    delay_before_query: Duration,
+    results: Arc<outputs::Results>,
+    method: &String
+) {
     tokio::time::sleep(delay_before_query).await;
+    let client = reqwest::Client::new();
     let start = Instant::now();
-    match reqwest::get(url).await {
+
+    let request = match method.to_lowercase().as_str() {
+        "get" => client.get(url),
+        "post" => client.post(url),
+        "patch" => client.patch(url),
+        "delete" => client.delete(url),
+        "put" => client.put(url),
+        _ => panic!("Invalid method, availables: GET/POST/PATCH/DELETE/PUT")
+    };
+
+    match request.send().await {
         Err(_) => results.error_count.fetch_add(1, Ordering::SeqCst),
         Ok(_) => {
             results.latencies.lock().unwrap().push(start.elapsed().as_millis());
@@ -56,7 +76,14 @@ async fn main() {
     outputs::print_execution_time(args.count, args.speed);
 
     for i in 0..args.count {
-        requests.push(send_query(&args.url, delay_between_queries(args.speed, i), results.clone()));
+        requests.push(
+            send_query(
+                &args.url,
+                delay_between_queries(args.speed, i),
+                results.clone(),
+                &args.method
+            )
+        );
     }
     join_all(requests).await;
 
