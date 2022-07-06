@@ -1,9 +1,11 @@
 use std::{time::Duration, sync::{Arc, atomic::{AtomicU64, Ordering}, Mutex}};
 use clap::Parser;
 use futures::future::join_all;
+use reqwest::header::HeaderMap;
 use tokio::{self, time::Instant};
 
 mod outputs;
+mod headers;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -23,6 +25,10 @@ struct Args {
     /// HTTP Method
     #[clap(short, long, value_parser, default_value = "get")]
     method: String,
+
+    /// Headers (key=value)
+    #[clap(short, long, value_parser)]
+    headers: Vec<String>,
 }
 
 // Delay between queries, we take delay between two query in a same second (1/x) then we converts
@@ -38,7 +44,8 @@ async fn send_query(
     url: &String,
     delay_before_query: Duration,
     results: Arc<outputs::Results>,
-    method: &String
+    method: &String,
+    header_map: HeaderMap,
 ) {
     tokio::time::sleep(delay_before_query).await;
     let client = reqwest::Client::new();
@@ -51,7 +58,7 @@ async fn send_query(
         "delete" => client.delete(url),
         "put" => client.put(url),
         _ => panic!("Invalid method, availables: GET/POST/PATCH/DELETE/PUT")
-    };
+    }.headers(header_map);
 
     match request.send().await {
         Err(_) => results.error_count.fetch_add(1, Ordering::SeqCst),
@@ -71,6 +78,10 @@ async fn main() {
         error_count: AtomicU64::new(0),
         latencies: Arc::new(Mutex::new(Vec::new()))
     });
+    let header_map = match headers::get_headers(args.headers) {
+        Ok(m) => m,
+        Err(_) => panic!("Invalid headers format."),
+    };
     
     outputs::print_intro();
     outputs::print_execution_time(args.count, args.speed);
@@ -81,7 +92,8 @@ async fn main() {
                 &args.url,
                 delay_between_queries(args.speed, i),
                 results.clone(),
-                &args.method
+                &args.method,
+                header_map.clone()
             )
         );
     }
