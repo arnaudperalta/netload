@@ -1,7 +1,7 @@
 use std::{time::Duration, sync::{Arc, atomic::{AtomicU64, Ordering}, Mutex}};
 use clap::Parser;
 use futures::future::join_all;
-use reqwest::header::HeaderMap;
+use reqwest::{header::HeaderMap, Body};
 use tokio::{self, time::Instant};
 
 mod outputs;
@@ -29,6 +29,10 @@ struct Args {
     /// Headers (key=value)
     #[clap(short, long, value_parser)]
     headers: Vec<String>,
+
+    /// JSON Body
+    #[clap(short, long, value_parser)]
+    body: String,
 }
 
 // Delay between queries, we take delay between two query in a same second (1/x) then we converts
@@ -46,6 +50,7 @@ async fn send_query(
     results: Arc<outputs::Results>,
     method: &String,
     header_map: HeaderMap,
+    body: &String
 ) {
     tokio::time::sleep(delay_before_query).await;
     let client = reqwest::Client::new();
@@ -58,7 +63,8 @@ async fn send_query(
         "delete" => client.delete(url),
         "put" => client.put(url),
         _ => panic!("Invalid method, availables: GET/POST/PATCH/DELETE/PUT")
-    }.headers(header_map);
+    }.headers(header_map)
+    .body(Body::from(body.clone()));
 
     match request.send().await {
         Err(_) => results.error_count.fetch_add(1, Ordering::SeqCst),
@@ -93,7 +99,8 @@ async fn main() {
                 delay_between_queries(args.speed, i),
                 results.clone(),
                 &args.method,
-                header_map.clone()
+                header_map.clone(),
+                &args.body
             )
         );
     }
