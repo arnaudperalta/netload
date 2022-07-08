@@ -7,7 +7,7 @@ pub struct Results {
     pub latencies: Arc<Mutex<Vec<u128>>>
 }
 
-pub fn print_results(results: Arc<Results>) {
+pub fn print_results(results: &Arc<Results>) {
     let avg_latency = average_latency(results.latencies.lock().unwrap().clone());
     let min_latency = minimum_latency(results.latencies.lock().unwrap().clone());
     let max_latency = maximum_latency(results.latencies.lock().unwrap().clone());

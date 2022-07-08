@@ -1,4 +1,4 @@
-use std::{time::Duration, sync::{Arc, atomic::{AtomicU64, Ordering}, Mutex}};
+use std::{time::Duration, sync::{Arc, atomic::{AtomicU64, Ordering}, Mutex}, process::exit};
 use clap::Parser;
 use futures::future::join_all;
 use reqwest::{header::HeaderMap, Body};
@@ -106,5 +106,8 @@ async fn main() {
     }
     join_all(requests).await;
 
-    outputs::print_results(results);
+    outputs::print_results(&results);
+    if results.error_count.load(Ordering::SeqCst) > 0 {
+        exit(1)
+    }
 }
