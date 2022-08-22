@@ -31,7 +31,7 @@ struct Args {
     headers: Vec<String>,
 
     /// JSON Body
-    #[clap(short, long, value_parser)]
+    #[clap(short, long, value_parser, default_value = "")]
     body: String,
 }
 

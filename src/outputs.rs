@@ -8,6 +8,10 @@ pub struct Results {
 }
 
 pub fn print_results(results: &Arc<Results>) {
+    if results.success_count.load(Ordering::SeqCst) == 0 {
+        println!("Every request failed.");
+        return;
+    }
     let avg_latency = average_latency(results.latencies.lock().unwrap().clone());
     let min_latency = minimum_latency(results.latencies.lock().unwrap().clone());
     let max_latency = maximum_latency(results.latencies.lock().unwrap().clone());
